@@ -622,3 +622,18 @@ class LeggedRobot(BaseTask):
         contacts = self.simulator.link_contact_forces[:, self.simulator.feet_contact_indices, 2] > 0.1
         slip_penalty = torch.sum(foot_vel_xy_norm * contacts, dim=1)
         return slip_penalty
+
+    def _reward_alive(self):
+        '''simple alive reward'''
+        return torch.ones(
+            self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+    
+    
+    def _reward_feet_contact_forces(self):
+        # penalize high contact forces
+        return torch.sum(
+            (
+                torch.norm(self.simulator.link_contact_forces[:, self.simulator.feet_contact_indices, :], dim=-1) - self.cfg.rewards.max_contact_force
+            ).clip(min=0.0, max=450),
+            dim=1,
+        )
