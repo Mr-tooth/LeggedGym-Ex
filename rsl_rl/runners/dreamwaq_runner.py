@@ -88,6 +88,7 @@ class DreamWaQRunner(OnPolicyRunner):
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
+            self._update_curriculum(it)
             start = time.time()
             # Rollout
             with torch.inference_mode():

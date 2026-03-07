@@ -41,6 +41,7 @@ import torch
 from rsl_rl.algorithms import PPO
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
 from rsl_rl.env import VecEnv
+from rsl_rl.utils import CurriculumManager
 
 
 class OnPolicyRunner:
@@ -76,6 +77,24 @@ class OnPolicyRunner:
         self.tot_timesteps = 0
         self.tot_time = 0
         self.current_learning_iteration = 0
+        self.curriculum_manager = None
+        self.curriculum_log_interval = self.cfg["curriculum_log_interval"] if "curriculum_log_interval" in self.cfg else 20
+        self._curriculum_log_items = []
+        curriculum_cfg = self._get_curriculum_cfg(train_cfg)
+        if self._cfg_get(curriculum_cfg, "enabled", False):
+            self.curriculum_manager = CurriculumManager(
+                self._cfg_get(curriculum_cfg, "schedules", []),
+                update_interval_iter=self._cfg_get(
+                    curriculum_cfg, "update_interval_iter", 1
+                ),
+                default_root=self._cfg_get(curriculum_cfg, "default_root", "env"),
+                contexts={
+                    "env": self.env,
+                    "alg": self.alg,
+                    "runner": self,
+                    "train_cfg": self.all_cfg,
+                },
+            )
 
         self.env.reset()
     
@@ -113,6 +132,7 @@ class OnPolicyRunner:
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
+            self._update_curriculum(it)
             start = time.time()
             # Rollout
             with torch.inference_mode():
@@ -153,6 +173,41 @@ class OnPolicyRunner:
         
         self.current_learning_iteration += num_learning_iterations
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
+
+    def _update_curriculum(self, iteration):
+        if self.curriculum_manager is not None:
+            self.curriculum_manager.update(iteration)
+            self._log_curriculum(iteration)
+
+    def _log_curriculum(self, iteration):
+        last_values = self.curriculum_manager.get_last_values()
+        if len(last_values) == 0:
+            self._curriculum_log_items = []
+            return
+
+        sorted_items = sorted(last_values.items())
+        if iteration % max(1, int(self.curriculum_log_interval)) == 0:
+            self._curriculum_log_items = sorted_items
+        else:
+            self._curriculum_log_items = []
+
+        if self.writer is not None:
+            for key, value in sorted_items:
+                self.writer.add_scalar(f"Curriculum/{key}", value, iteration)
+
+    def _get_curriculum_cfg(self, train_cfg):
+        env_cfg = getattr(self.env, "cfg", None)
+        if env_cfg is not None and hasattr(env_cfg, "curriculum"):
+            return env_cfg.curriculum
+        return train_cfg.get("curriculum", None)
+
+    @staticmethod
+    def _cfg_get(container, key, default=None):
+        if container is None:
+            return default
+        if isinstance(container, dict):
+            return container.get(key, default)
+        return getattr(container, key, default)
 
     def _pre_learn(self, init_at_random_ep_len):
         # initialize writer
@@ -229,6 +284,9 @@ class OnPolicyRunner:
                         #   f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n""")
 
         log_string += ep_string
+        if self._curriculum_log_items:
+            for key, value in self._curriculum_log_items:
+                log_string += f"{f'Curriculum {key}:':>{pad}} {value:.6g}\n"
         log_string += (f"""{'-' * width}\n"""
                        f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
                        f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s\n"""
