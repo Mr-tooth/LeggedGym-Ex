@@ -67,6 +67,11 @@ def override_configs(env_cfg, args):
         
         
     env_cfg.env.debug = True
+
+    # For fixed-command debugging, disable heading mode so commands[:, 2]
+    # remains the actual yaw-rate command seen by the policy/environment.
+    if not args.use_joystick:
+        env_cfg.commands.heading_command = False
     
     if args.use_joystick:
         env_cfg.commands.heading_command = False
@@ -85,8 +90,14 @@ def print_debug_info(env, robot_index):
     # print("foot_height: ", env.simulator.feet_pos[robot_index, :, 2].cpu().numpy())
     # print(f"ankle pitch: {env.simulator.dof_pos[robot_index, [3,7]].cpu().numpy()}")
     # print(f"actions: {env.simulator.dof_pos[robot_index].cpu().numpy()}")
-    print(f"contact forces: {env.simulator.link_contact_forces[robot_index, env.simulator.feet_contact_indices, :].cpu().numpy()}")
+    # print(f"contact forces: {env.simulator.link_contact_forces[robot_index, env.simulator.feet_contact_indices, :].cpu().numpy()}")
     print(f"commands: {env.commands[robot_index].cpu().numpy()}")
+    if hasattr(env, "stand_mask") and hasattr(env, "crawl_mask"):
+        print(
+            f"stand={int(env.stand_mask[robot_index].item())}, "
+            f"crawl={int(env.crawl_mask[robot_index].item())}, "
+            f"vx={env.simulator.base_lin_vel[robot_index, 0].item():.3f}"
+        )
     pass
 
 def interaction_loop(env, policy, args):
@@ -133,7 +144,7 @@ def interaction_loop(env, policy, args):
         else:
             env.commands[:, 0] = 0.0
             env.commands[:, 1] = 0.0
-            env.commands[:, 2] = 0.0    
+            env.commands[:, 2] = 0.0   
             env.commands[:, 3] = 0.0
         
         # set the viewer camera to follow the first environment by default
