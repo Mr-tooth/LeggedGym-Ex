@@ -1,6 +1,17 @@
-# 🦿 LeggedGym-Ex
+# 🦿 LJH Version of LeggedGym-Ex
 
 A [legged_gym](https://github.com/leggedrobotics/legged_gym) based framework for training legged robots in [Genesis](https://github.com/Genesis-Embodied-AI/Genesis/tree/main), [IsaacGym](https://developer.nvidia.com/isaac-gym) and [IsaacSim](https://developer.nvidia.com/isaac/sim).
+
+## New features added and todos by Junhang Lai
+
+- [x] Fix pyproject.toml with opencv-python
+- [x] Add structured Chinese tutorials to beginners
+- [x] Add curriculum manager in runners for dynamicly tuning params without resume
+- [x] Add cmd keyboard control option in play.py
+- [ ] Add AMP for stylistic learning
+- [ ] Add GMR for motion retargeting
+
+Enjoy this fork! Issues and PRs are welcome.
 
 ## 🌟 Features
 
