@@ -9,6 +9,62 @@ from legged_gym.utils import *
 import numpy as np
 import torch
 from legged_gym.scripts.joystick import Joystick
+
+try:
+    import pygame
+except ImportError:
+    pygame = None
+
+
+class KeyboardControl:
+    def __init__(self, cmd_step=0.05, yaw_step=0.1):
+        if pygame is None:
+            raise ImportError("pygame is required for keyboard control")
+        pygame.init()
+        self.screen = pygame.display.set_mode((520, 120))
+        pygame.display.set_caption("LeggedGym Keyboard Control")
+        self.font = pygame.font.Font(None, 22)
+        self.cmd_step = cmd_step
+        self.yaw_step = yaw_step
+        self.cmd_x = 0.0
+        self.cmd_y = 0.0
+        self.cmd_yaw = 0.0
+
+    def update(self, env):
+        pygame.event.pump()
+        keys = pygame.key.get_pressed()
+
+        if keys[pygame.K_w]:
+            self.cmd_x += self.cmd_step
+        if keys[pygame.K_s]:
+            self.cmd_x -= self.cmd_step
+        if keys[pygame.K_d]:
+            self.cmd_y += self.cmd_step
+        if keys[pygame.K_a]:
+            self.cmd_y -= self.cmd_step
+        if keys[pygame.K_q]:
+            self.cmd_yaw += self.yaw_step
+        if keys[pygame.K_e]:
+            self.cmd_yaw -= self.yaw_step
+
+        if keys[pygame.K_r]:
+            self.cmd_x = 0.0
+            self.cmd_y = 0.0
+            self.cmd_yaw = 0.0
+
+        self.cmd_x = float(np.clip(self.cmd_x, env.command_ranges["lin_vel_x"][0], env.command_ranges["lin_vel_x"][1]))
+        self.cmd_y = float(np.clip(self.cmd_y, env.command_ranges["lin_vel_y"][0], env.command_ranges["lin_vel_y"][1]))
+        self.cmd_yaw = float(np.clip(self.cmd_yaw, env.command_ranges["ang_vel_yaw"][0], env.command_ranges["ang_vel_yaw"][1]))
+
+        env.commands[:, 0] = self.cmd_x
+        env.commands[:, 1] = self.cmd_y
+        env.commands[:, 2] = self.cmd_yaw
+        env.commands[:, 3] = 0.0
+
+        text = f"W/S: x {self.cmd_x:+.2f}  A/D: y {self.cmd_y:+.2f}  Q/E: yaw {self.cmd_yaw:+.2f}  R: reset"
+        self.screen.fill((25, 25, 25))
+        self.screen.blit(self.font.render(text, True, (220, 220, 220)), (10, 45))
+        pygame.display.flip()
     
 def override_configs(env_cfg, args):
     """Override some environment configuration parameters for testing
@@ -70,10 +126,10 @@ def override_configs(env_cfg, args):
 
     # For fixed-command debugging, disable heading mode so commands[:, 2]
     # remains the actual yaw-rate command seen by the policy/environment.
-    if not args.use_joystick:
+    if not args.use_joystick and not args.use_keyboard:
         env_cfg.commands.heading_command = False
     
-    if args.use_joystick:
+    if args.use_joystick or args.use_keyboard:
         env_cfg.commands.heading_command = False
 
 def print_debug_info(env, robot_index):
@@ -129,6 +185,11 @@ def interaction_loop(env, policy, args):
     # Setup joystick if needed
     if args.use_joystick:
         joystick = Joystick(joystick_type=args.joystick_type)
+    keyboard = None
+    if args.use_keyboard:
+        if args.use_joystick:
+            raise ValueError("Use either --use_joystick or --use_keyboard, not both")
+        keyboard = KeyboardControl()
     
     frame_dt = 1 / 60.0 # 30Hz
     # interaction loop
@@ -141,8 +202,10 @@ def interaction_loop(env, policy, args):
             env.commands[:, 0] = -joystick.ly
             env.commands[:, 1] = -joystick.lx
             env.commands[:, 2] = -joystick.rx
+        elif args.use_keyboard:
+            keyboard.update(env)
         else:
-            env.commands[:, 0] = 0.0
+            env.commands[:, 0] = 0.1
             env.commands[:, 1] = 0.0
             env.commands[:, 2] = 0.0   
             env.commands[:, 3] = 0.0
